@@ -1,0 +1,4 @@
+C:\Users\nbigi0\AppData\Local\Programs\CLion\bin\cmake\win\x64\bin\cmake.exe -DCMAKE_BUILD_TYPE=Release -DCMAKE_MAKE_PROGRAM=C:/Users/nbigi0/AppData/Local/Programs/CLion/bin/ninja/win/x64/ninja.exe -G Ninja -S "D:\nbigi0\My Documents\CLion\N-Body Gravitation Simulation" -B "D:\nbigi0\My Documents\CLion\N-Body Gravitation Simulation\cmake-build-release"
+-- Configuring done (1.4s)
+-- Generating done (0.2s)
+-- Build files have been written to: D:/nbigi0/My Documents/CLion/N-Body Gravitation Simulation/cmake-build-release

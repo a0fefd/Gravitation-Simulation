@@ -1,0 +1,60 @@
+{
+	"configurations" : 
+	[
+		{
+			"directories" : 
+			[
+				{
+					"build" : ".",
+					"jsonFile" : "directory-.-Debug-d0094a50bb2071803777.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.30"
+					},
+					"projectIndex" : 0,
+					"source" : ".",
+					"targetIndexes" : 
+					[
+						0
+					]
+				}
+			],
+			"name" : "Debug",
+			"projects" : 
+			[
+				{
+					"directoryIndexes" : 
+					[
+						0
+					],
+					"name" : "N_Body_Gravitation_Simulation",
+					"targetIndexes" : 
+					[
+						0
+					]
+				}
+			],
+			"targets" : 
+			[
+				{
+					"directoryIndex" : 0,
+					"id" : "N_Body_Gravitation_Simulation::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-N_Body_Gravitation_Simulation-Debug-b9898969e91ae9a5961e.json",
+					"name" : "N_Body_Gravitation_Simulation",
+					"projectIndex" : 0
+				}
+			]
+		}
+	],
+	"kind" : "codemodel",
+	"paths" : 
+	{
+		"build" : "D:/nbigi0/My Documents/CLion/N-Body Gravitation Simulation/cmake-build-debug",
+		"source" : "D:/nbigi0/My Documents/CLion/N-Body Gravitation Simulation"
+	},
+	"version" : 
+	{
+		"major" : 2,
+		"minor" : 7
+	}
+}

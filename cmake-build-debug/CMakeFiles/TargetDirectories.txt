@@ -1,0 +1,3 @@
+D:/nbigi0/My Documents/CLion/N-Body Gravitation Simulation/cmake-build-debug/CMakeFiles/N_Body_Gravitation_Simulation.dir
+D:/nbigi0/My Documents/CLion/N-Body Gravitation Simulation/cmake-build-debug/CMakeFiles/edit_cache.dir
+D:/nbigi0/My Documents/CLion/N-Body Gravitation Simulation/cmake-build-debug/CMakeFiles/rebuild_cache.dir
