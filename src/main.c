@@ -3,6 +3,7 @@
 #include <glad/glad.h>
 #include <main.h>
 #include <shader.h>
+#include <string.h>
 #include <time.h>
 #include <cglm/cglm.h>
 
@@ -11,9 +12,8 @@
 #define BARRIER 0.8f
 //
 
+// #define PARTICLES 20
 #define SOFTENING 5e-4f
-#define PARTICLES 20
-#define MASS_C (3e8f/pow(PARTICLES, pow(1-SOFTENING, 50)))
 #define G 6.6743e-11f
 
 typedef struct
@@ -23,42 +23,7 @@ typedef struct
     float m;
 } Particle;
 
-void calcForces(Particle *particles, const double dt)
-{
-#pragma omp parallel for schedule(dynamic)
-    for (int i = 0; i < PARTICLES; i++)
-    {
-        float Fx = 0.0f; float Fy = 0.0f;
-
-        for (int j = 0; j < PARTICLES; j++)
-        {
-            float dx = particles[j].pos[0] - particles[i].pos[0];
-            float dy = particles[j].pos[1] - particles[i].pos[1];
-
-            if (dx == 0.0f && dy == 0.0f)
-            {
-                continue;
-            }
-            // if (pythag(dx, dy) < 0.4*(particles[i].m + particles[j].m)/30)
-            // {
-            //     continue;
-            // }
-            float dist2 = dx*dx + dy*dy + SOFTENING;
-            float rdist = Q_rsqrt(dist2);
-            float rdist3 = rdist*rdist*rdist;
-            float force = G * pow(particles[j].m, 1 + SOFTENING) * rdist3;
-
-            Fx += force * dx;
-            Fy += force * dy;
-        }
-
-        // printf("%f Fx, %f Fy\n", Fx, Fy);
-
-        particles[i].vel[0] += Fx*dt;
-        particles[i].vel[1] += Fy*dt;
-
-    }
-}
+void calcForces(Particle *particles, int16_t PARTICLES, const GLfloat dt);
 
 void applyForce(Particle *p, const vec3 F, const double dt)
 {
@@ -68,19 +33,80 @@ void applyForce(Particle *p, const vec3 F, const double dt)
     }
 }
 
-void updateVertexArray(GLfloat *vertices, const Particle *particles)
+void updateVertexArray(GLfloat *vertices, Particle *particles, int16_t PARTICLES);
+
+char** str_split(char* a_str, const char a_delim)
 {
-    for (int i = 0; i < PARTICLES; i++)
+    char** result    = 0;
+    size_t count     = 0;
+    char* tmp        = a_str;
+    char* last_comma = 0;
+    char delim[2];
+    delim[0] = a_delim;
+    delim[1] = 0;
+
+    /* Count how many elements will be extracted. */
+    while (*tmp)
     {
-        for (int j = 0; j < 3; j++)
+        if (a_delim == *tmp)
         {
-            vertices[i*3+j] = particles[i].pos[j];
+            count++;
+            last_comma = tmp;
         }
+        tmp++;
     }
+
+    /* Add space for trailing token. */
+    count += last_comma < (a_str + strlen(a_str) - 1);
+
+    /* Add space for terminating null string so caller
+       knows where the list of returned strings ends. */
+    count++;
+
+    result = malloc(sizeof(char*) * count);
+
+    if (result)
+    {
+        size_t idx  = 0;
+        char* token = strtok(a_str, delim);
+
+        while (token)
+        {
+            assert(idx < count);
+            *(result + idx++) = strdup(token);
+            token = strtok(0, delim);
+        }
+        if (idx > 0)
+        {
+            assert(idx == count - 1);
+        } else
+        {
+            return (void*)0;
+        }
+        *(result + idx) = 0;
+    }
+
+    return result;
 }
 
 int main(void)
 {
+    int16_t PARTICLES = 20;
+
+    const FileData configSource = read_file("./.config");
+    char **lines = str_split(configSource.content, '\n');
+    if (!lines)
+    {
+        fprintf(stderr, "Failed to read config file\n");
+    } else
+    {
+        PARTICLES = (int16_t)atoi(lines[0]);
+    }
+    free(lines);
+
+
+#define MASS_C (3e8f/pow(PARTICLES, pow(1-SOFTENING, 50)))
+
     const FileData vertexShaderSource = read_file("../shaders/vertexShader.vert");
     const FileData fragmentShaderSource = read_file("../shaders/fragmentShader.frag");
 
@@ -164,7 +190,7 @@ int main(void)
     while (!glfwWindowShouldClose(window))
     {
         const GLdouble t = glfwGetTime();
-        calcForces(particles, dt);
+        calcForces(particles, PARTICLES, dt);
 
         for (int i = 0; i < PARTICLES; i++)
         {
@@ -216,7 +242,7 @@ int main(void)
             }
         }
 
-        updateVertexArray(vertices, particles);
+        updateVertexArray(vertices, particles, PARTICLES);
 
         glClearColor(0.5f, 0.5f, 0.5f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
@@ -244,6 +270,54 @@ int main(void)
 
     glfwTerminate();
     return 0;
+}
+
+void updateVertexArray(GLfloat *vertices, Particle *particles, int16_t PARTICLES)
+{
+    for (int i = 0; i < PARTICLES; i++)
+    {
+        for (int j = 0; j < 3; j++)
+        {
+            vertices[i*3+j] = particles[i].pos[j];
+        }
+    }
+}
+
+void calcForces(Particle *particles, int16_t PARTICLES, const GLfloat dt)
+{
+#pragma omp parallel for schedule(dynamic)
+    for (int i = 0; i < PARTICLES; i++)
+    {
+        float Fx = 0.0f; float Fy = 0.0f;
+
+        for (int j = 0; j < PARTICLES; j++)
+        {
+            float dx = particles[j].pos[0] - particles[i].pos[0];
+            float dy = particles[j].pos[1] - particles[i].pos[1];
+
+            if (dx == 0.0f && dy == 0.0f)
+            {
+                continue;
+            }
+            // if (pythag(dx, dy) < 0.4*(particles[i].m + particles[j].m)/30)
+            // {
+            //     continue;
+            // }
+            float dist2 = dx*dx + dy*dy + SOFTENING;
+            float rdist = Q_rsqrt(dist2);
+            float rdist3 = rdist*rdist*rdist;
+            float force = G * pow(particles[j].m, 1 + SOFTENING) * rdist3;
+
+            Fx += force * dx;
+            Fy += force * dy;
+        }
+
+        // printf("%f Fx, %f Fy\n", Fx, Fy);
+
+        particles[i].vel[0] += Fx*dt;
+        particles[i].vel[1] += Fy*dt;
+
+    }
 }
 
 void framebuffer_size_callback(GLFWwindow* window, int width, int height)
