@@ -5,9 +5,9 @@ out vec4 colour;
 
 void main()
 {
-    colour = vec4(mass*mass, 0, mass*mass*mass, 1.f);
+    colour = vec4(mass*mass, pow(mass, 11), pow(mass, 5), 1.f);
 
     gl_Position = vec4(aPos.xy, 0.0f, 1.0f);
 //    gl_PointSize = round(100*mass)/20;
-    gl_PointSize = 20*mass;
+    gl_PointSize = 15*mass;
 }

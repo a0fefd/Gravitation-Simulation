@@ -6,20 +6,70 @@
 #include <time.h>
 #include <cglm/cglm.h>
 
-#define SPEED_LIMIT .5f
+#define SPEED_LIMIT 5.0f
 #define PARTICLES 500
-#define GRAV_DISTANCE 3.f
-#define MASS_C 1000.0f
-#define G (6.6743*exp(-11))
+#define BARRIER 0.8f
+#define NO_PARTICLE_BARRIER
+#define MASS_C (1e10f/(PARTICLES))
+#define G 6.6743e-11f
+#define SOFTENING 1e-9f
 
-void framebuffer_size_callback(GLFWwindow* window, int width, int height)
+typedef struct
 {
-    glViewport(0, 0, width, height);
+    vec3 pos;
+    vec3 vel;
+    float m;
+} Particle;
+
+void calcForces(Particle *particles, const double dt)
+{
+#pragma omp parallel for schedule(dynamic)
+    for (int i = 0; i < PARTICLES; i++)
+    {
+        float Fx = 0.0f; float Fy = 0.0f;
+
+        for (int j = 0; j < PARTICLES; j++)
+        {
+            float dx = particles[j].pos[0] - particles[i].pos[0];
+            float dy = particles[j].pos[1] - particles[i].pos[1];
+
+            if (dx == 0.0f && dy == 0.0f)
+            {
+                continue;
+            }
+            float dist2 = dx*dx + dy*dy + SOFTENING;
+            float rdist = Q_rsqrt(dist2);
+            float force = G * particles[i].m * particles[j].m * 1/(rdist*rdist*rdist);
+
+            Fx += force * dx;
+            Fy += force * dy;
+        }
+
+        // printf("%f Fx, %f Fy\n", Fx, Fy);
+
+        particles[i].vel[0] += Fx*dt / particles[i].m;
+        particles[i].vel[1] += Fy*dt / particles[i].m;
+
+    }
 }
 
-float absf(float x)
+void applyForce(Particle *p, const vec3 F, const double dt)
 {
-    return (x > 0) ? x : -x;
+    for (int i = 0; i < 3; i++)
+    {
+        p->vel[i] += F[i]/p->m * dt;
+    }
+}
+
+void updateVertexArray(GLfloat *vertices, const Particle *particles)
+{
+    for (int i = 0; i < PARTICLES; i++)
+    {
+        for (int j = 0; j < 3; j++)
+        {
+            vertices[i*3+j] = particles[i].pos[j];
+        }
+    }
 }
 
 int main(void)
@@ -59,29 +109,21 @@ int main(void)
 
     glEnable(GL_PROGRAM_POINT_SIZE);
 
-
+    Particle particles[PARTICLES];
     GLuint indices[PARTICLES];
-    GLfloat masses[PARTICLES];
+    const size_t vertexCount = 3*PARTICLES;
+    GLfloat vertices[vertexCount], masses[PARTICLES];
     for (unsigned int i = 0; i < PARTICLES; i++)
     {
         indices[i] = i;
-
-        srand(rand());
-        masses[i] = (rand_range((int)(MASS_C/5), (int)MASS_C))/MASS_C;
-    }
-
-    const size_t vertexCount = 3*PARTICLES;
-
-    GLfloat vertices[vertexCount], velocities[vertexCount], accellerations[vertexCount];
-
-    for (int i = 0; i < vertexCount; i++)
-    {
-        srand(rand());
-
-        vertices[i] = .1f * randf();
-
-        velocities[i] = SPEED_LIMIT * randf();
-        accellerations[i] = 0.0f;
+        for (int j = 0; j < 3; j++)
+        {
+            particles[i].pos[j] = 0.5f*randf();
+            particles[i].vel[j] = 0.1f*randf();
+        }
+        masses[i] = u_randf();
+        particles[i].m = masses[i]*MASS_C;
+        printf("Particle %d Mass: %f\n", i, particles[i].m);
     }
 
     GLuint VBO, VBO2, VAO, EBO;
@@ -104,101 +146,69 @@ int main(void)
     glBindBuffer(GL_ARRAY_BUFFER, VBO2);
     glBufferData(GL_ARRAY_BUFFER, sizeof(masses), masses, GL_STATIC_DRAW);
 
-    glVertexAttribPointer(1, 1, GL_FLOAT, GL_TRUE, 1 * sizeof(float), (void*)0);
+    glVertexAttribPointer(1, 1, GL_FLOAT, GL_FALSE, 1 * sizeof(float), (void*)0);
     glEnableVertexAttribArray(1);
 
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glBindVertexArray(0);
 
 
-    GLdouble dt = glfwGetTime();
+    GLdouble dt = 0.01f;
     while (!glfwWindowShouldClose(window))
     {
-        const GLdouble prev_dt = glfwGetTime();
+        const GLdouble t = glfwGetTime();
+        calcForces(particles, dt);
 
-        GLfloat prev_part[3];
-        for (size_t i = 3; i < vertexCount; i += 3)
+        for (int i = 0; i < PARTICLES; i++)
         {
-            for (size_t j = 0; j < 3; j++)
+            // printf("%d: (%f, %f), %fx + %fy\n", i, particles[i].pos[0], particles[i].pos[1], particles[i].vel[0], particles[i].vel[1]);
+
+#ifndef NO_PARTICLE_BARRIER
+            if (_abs(particles[i].pos[0]) > BARRIER)
             {
-                if (i == 3)
-                {
-                    for (size_t k = 0; k < 3; k++)
-                    {
-                        prev_part[k] = vertices[k];
-                    }
-                }
-                prev_part[j] = vertices[i + j];
+                const vec3 F = {
+                    particles[i].m/3 * 1/_abs(1-_abs(particles[i].pos[0])) * -sign(particles[i].pos[0]),
+                    0,
+                    0
+                };
+                applyForce(&particles[i], F, dt);
             }
-            if (sqrt(pow(vertices[i]-prev_part[0], 2) + pow(vertices[i+1] - prev_part[1], 2)) < GRAV_DISTANCE)
+            if (_abs(particles[i].pos[1]) > BARRIER)
             {
-                if (sqrt(
-                    pow(vertices[i]-prev_part[0], 2) + pow(vertices[i+1] - prev_part[1], 2)
-                    ) < 0.05)
-                {
-                    // accellerations[i] = (absf(vertices[i])/vertices[i]) * 1/pow(MASS_C, 1.5);
-                    // accellerations[i+1] = (absf(vertices[i+1])/vertices[i+1]) * 1/pow(MASS_C, 1.5);
-                }
-                accellerations[i] = -(
-                        absf(vertices[i])/vertices[i]) *
-                        absf(G*pow(MASS_C, 2) *
-                        masses[i/3]*masses[(i-3)/3] /
-                        pow(absf(vertices[i]) - absf(vertices[i-3]),2)
-                        );
-                accellerations[i+1] = -(
-                        absf(vertices[i+1])/vertices[i+1]) *
-                        absf(G*pow(MASS_C, 2) *
-                        masses[i/3]*masses[(i-3)/3] /
-                        pow(absf(vertices[i+1]) - absf(vertices[i-3+1]),2)
-                        );
+                const vec3 F = {
+                    0,
+                    particles[i].m/3 * 1/_abs(1-_abs(particles[i].pos[1])) * -sign(particles[i].pos[1]),
+                    0
+                };
+                applyForce(&particles[i], F, dt);
+            }
+#endif
+
+            (_abs(particles[i].vel[0]) > SPEED_LIMIT) ? particles[i].vel[0] = SPEED_LIMIT : 0;
+            (_abs(particles[i].vel[1]) > SPEED_LIMIT) ? particles[i].vel[1] = SPEED_LIMIT : 0;
+
+            for (int j = 0; j < 3; j++)
+            {
+                particles[i].pos[j] += particles[i].vel[j]*dt;
             }
         }
 
-        for (size_t i = 0; i < vertexCount; i++)
-        {
-            const float absf_vertex = absf(vertices[i]);
-            if (absf_vertex > 0.9f)
-            {
-                accellerations[i] = -(absf_vertex/vertices[i]) * absf(1.0f/pow(1-absf_vertex,2));
-            }
-            velocities[i] += accellerations[i] * dt;
-
-            (absf(accellerations[i]) > 0) ? accellerations[i] -= 0.05f*(absf(accellerations[i])/accellerations[i]) : (void)0;
-
-            (velocities[i] > SPEED_LIMIT) ? velocities[i] = SPEED_LIMIT : (void)0;
-
-            // (absf(vertices[i]) > 1) ? velocities[i] *= -1 : (void)0;
-
-            vertices[i] += velocities[i] * dt;
-
-            // for (unsigned int j = 0; j < 3; j++)
-            // {
-            //     unsigned int index = i/3 + j;
-            //     vertices[index] += velocities[index] * dt;
-            //
-            //     if (vertices[index] > 1.0f || vertices[index] < -1.0f)
-            //     {
-            //         velocities[index] *= -1;
-            //     }
-            // }
-        }
+        updateVertexArray(vertices, particles);
 
         glClearColor(0.5f, 0.5f, 0.5f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
 
         glBindBuffer(GL_ARRAY_BUFFER, VBO);
         glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_DYNAMIC_DRAW);
-        // glBindBuffer(GL_ARRAY_BUFFER, VBO2);
-        // glBufferData(GL_ARRAY_BUFFER, sizeof(masses), masses, GL_DYNAMIC_DRAW);
 
         use(shader->ID);
         glBindVertexArray(VAO);
-        glDrawElements(GL_POINTS, sizeof(indices)/sizeof(GLuint), GL_UNSIGNED_INT, 0);
+        glDrawElements(GL_POINTS, PARTICLES, GL_UNSIGNED_INT, 0);
 
         glfwSwapBuffers(window);
         glfwPollEvents();
 
-        dt = glfwGetTime() - prev_dt;
+        dt = glfwGetTime() - t;
     }
 
     glDeleteVertexArrays(1, &VAO);
@@ -211,4 +221,26 @@ int main(void)
 
     glfwTerminate();
     return 0;
+}
+
+void framebuffer_size_callback(GLFWwindow* window, int width, int height)
+{
+    glViewport(0, 0, width, height);
+}
+
+float Q_rsqrt( float number )
+{
+    long i;
+    float x2, y;
+    const float threehalfs = 1.5F;
+
+    x2 = number * 0.5F;
+    y  = number;
+    i  = * ( long * ) &y;                       // evil floating point bit level hacking
+    i  = 0x5f3759df - ( i >> 1 );               // what the fuck?
+    y  = * ( float * ) &i;
+    y  = y * ( threehalfs - ( x2 * y * y ) );   // 1st iteration
+    //	y  = y * ( threehalfs - ( x2 * y * y ) );   // 2nd iteration, this can be removed
+
+    return y;
 }
