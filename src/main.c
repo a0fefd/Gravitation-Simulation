@@ -6,13 +6,15 @@
 #include <time.h>
 #include <cglm/cglm.h>
 
-#define SPEED_LIMIT 5.0f
-#define PARTICLES 500
+// CAN DISABLE //
+#define SPEED_LIMIT 1.0f
 #define BARRIER 0.8f
-#define NO_PARTICLE_BARRIER
-#define MASS_C (1e10f/(PARTICLES))
+//
+
+#define SOFTENING 5e-4f
+#define PARTICLES 20
+#define MASS_C (3e8f/pow(PARTICLES, pow(1-SOFTENING, 50)))
 #define G 6.6743e-11f
-#define SOFTENING 1e-9f
 
 typedef struct
 {
@@ -37,9 +39,14 @@ void calcForces(Particle *particles, const double dt)
             {
                 continue;
             }
+            // if (pythag(dx, dy) < 0.4*(particles[i].m + particles[j].m)/30)
+            // {
+            //     continue;
+            // }
             float dist2 = dx*dx + dy*dy + SOFTENING;
             float rdist = Q_rsqrt(dist2);
-            float force = G * particles[i].m * particles[j].m * 1/(rdist*rdist*rdist);
+            float rdist3 = rdist*rdist*rdist;
+            float force = G * pow(particles[j].m, 1 + SOFTENING) * rdist3;
 
             Fx += force * dx;
             Fy += force * dy;
@@ -47,8 +54,8 @@ void calcForces(Particle *particles, const double dt)
 
         // printf("%f Fx, %f Fy\n", Fx, Fy);
 
-        particles[i].vel[0] += Fx*dt / particles[i].m;
-        particles[i].vel[1] += Fy*dt / particles[i].m;
+        particles[i].vel[0] += Fx*dt;
+        particles[i].vel[1] += Fy*dt;
 
     }
 }
@@ -118,12 +125,12 @@ int main(void)
         indices[i] = i;
         for (int j = 0; j < 3; j++)
         {
-            particles[i].pos[j] = 0.5f*randf();
+            particles[i].pos[j] = 0.4f*randf();
             particles[i].vel[j] = 0.1f*randf();
         }
         masses[i] = u_randf();
         particles[i].m = masses[i]*MASS_C;
-        printf("Particle %d Mass: %f\n", i, particles[i].m);
+        printf("Particle %d Mass: %f\n", i+1, particles[i].m);
     }
 
     GLuint VBO, VBO2, VAO, EBO;
@@ -163,7 +170,7 @@ int main(void)
         {
             // printf("%d: (%f, %f), %fx + %fy\n", i, particles[i].pos[0], particles[i].pos[1], particles[i].vel[0], particles[i].vel[1]);
 
-#ifndef NO_PARTICLE_BARRIER
+#ifdef BARRIER
             if (_abs(particles[i].pos[0]) > BARRIER)
             {
                 const vec3 F = {
@@ -183,10 +190,26 @@ int main(void)
                 applyForce(&particles[i], F, dt);
             }
 #endif
-
-            (_abs(particles[i].vel[0]) > SPEED_LIMIT) ? particles[i].vel[0] = SPEED_LIMIT : 0;
-            (_abs(particles[i].vel[1]) > SPEED_LIMIT) ? particles[i].vel[1] = SPEED_LIMIT : 0;
-
+#ifdef SPEED_LIMIT
+            if (_abs(particles[i].vel[0]) > SPEED_LIMIT)
+            {
+                const vec3 F = {
+                    particles[i].m/3 * 1/_abs(1-_abs(particles[i].pos[0])) * -sign(particles[i].pos[0]),
+                    0,
+                    0
+                };
+                applyForce(&particles[i], F, dt);
+            }
+            if (_abs(particles[i].vel[1]) > SPEED_LIMIT)
+            {
+                const vec3 F = {
+                    0,
+                    particles[i].m/3 * 1/_abs(1-_abs(particles[i].pos[1])) * -sign(particles[i].pos[1]),
+                    0
+                };
+                applyForce(&particles[i], F, dt);
+            }
+#endif
             for (int j = 0; j < 3; j++)
             {
                 particles[i].pos[j] += particles[i].vel[j]*dt;
